@@ -1,15 +1,17 @@
 import argparse
 import json
 from json.decoder import JSONDecodeError
-from types import FunctionType
 import os
 from pathlib import Path
+from pathvalidate import sanitize_filepath
 import plistlib
 import pyprind
 import shutil
 import sqlite3
 import sys
 from tabulate import tabulate
+from time import sleep
+from types import FunctionType
 
 class ParsedBackup():
     path: Path = None
@@ -110,16 +112,16 @@ class Extractors():
         for file in files:
             fileID = file[0]
 
+            # Need to investigate this:
             if not fileID in backup.found_files:
-                print(f"File {fileID} exists in Manifest.db, but not in pybackup.json!")
+            #    print(f"File {fileID} exists in Manifest.db, but not in pybackup.json!")
                 continue
 
             absoluteSource = backup.path / backup.found_files[fileID]['path']
-
-            relativeDestination = file[2].replace('/', os.path.sep)
-            absoluteDestination : Path = destination / relativeDestination
+            absoluteDestination : Path = destination / sanitize_filepath(file[2])
 
             os.makedirs(os.path.dirname(absoluteDestination), exist_ok=True)
+
             shutil.copy(absoluteSource, absoluteDestination)
             bar.update()
 
@@ -144,10 +146,15 @@ def main(args: list[str]):
         raise ValueError(f"The provided path '{opts.path}' does not exist or is not a folder!")
 
     # Check if the backup has already been parsed...
-    backup = ParsedBackup.from_path(Path(opts.path))
+    backup = ParsedBackup.from_path(Path(opts.path).resolve())
 
     # Otherwise, proceed with extracting the files...
     backup.pretty_print_information()
+
+    if backup.manifest['IsEncrypted']:
+        print("Warning! Backup is encrypted: the extracted files are going to appear as if they are corrupted.")
+        print("Decryption will be automatically supported at a future time.")
+        sleep(1)
 
     # Print a message if the found backup is not a version that has been tested against
     if not opts.override and backup.status['Version'] != '3.3':
@@ -157,7 +164,7 @@ def main(args: list[str]):
 
     if getattr(opts, 'extract_type') is not None:
         try:
-            Extractors.from_name(opts.extract_type)(backup, Path(opts.destination))
+            Extractors.from_name(opts.extract_type)(backup, Path(opts.destination).resolve())
         except KeyError:
             print(f"'{opts.extract_type}' is not a valid extraction type!")
 
