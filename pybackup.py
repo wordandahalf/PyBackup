@@ -43,6 +43,31 @@ class ParsedBackup():
         ))
 
     @staticmethod
+    def from_path(backup_path: str):
+        json_file = os.path.join(backup_path, 'pybackup.json')
+        json_data = {}
+
+        if not os.path.isfile(json_file):
+            files = list(pathlib.Path(backup_path).rglob('*'))
+            file_count = len(files)
+
+            bar = pyprind.ProgBar(file_count)
+            for file in list(pathlib.Path(backup_path).rglob('*')):
+                if not file.is_dir():
+                    json_data[file.name] = { 'path': os.path.relpath(file, backup_path) }
+                bar.update()
+
+            with open(json_file, 'w') as file:
+                file.write(json.dumps(files))
+                file.close()
+        else:
+            with open(json_file, 'r') as file:
+                json_data = json.load(file)
+                file.close()
+
+        return ParsedBackup(backup_path, json_data)
+        
+    @staticmethod
     def __parse_plist__(path: str) -> dict:
         data = {}
 
@@ -51,30 +76,6 @@ class ParsedBackup():
             plist.close()
 
         return data
-
-def parse_backup(backup_path: str) -> ParsedBackup:
-    json_file = os.path.join(backup_path, 'pybackup.json')
-    json_data = {}
-
-    if not os.path.isfile(json_file):
-        files = list(pathlib.Path(backup_path).rglob('*'))
-        file_count = len(files)
-
-        bar = pyprind.ProgBar(file_count)
-        for file in list(pathlib.Path(backup_path).rglob('*')):
-            if not file.is_dir():
-                json_data[file.name] = { 'path': os.path.relpath(file, backup_path) } # MIME is unneeded (for now): , 'mime': get_file_mime(str(file)) }
-            bar.update()
-
-        with open(json_file, 'w') as file:
-            file.write(json.dumps(files))
-            file.close()
-    else:
-        with open(json_file, 'r') as file:
-            json_data = json.load(file)
-            file.close()
-
-    return ParsedBackup(backup_path, json_data)
 
 class Extractors():
     @staticmethod
@@ -137,14 +138,14 @@ def main(args: list[str]):
         raise ValueError(f"The provided path '{opts.path}' does not exist or is not a folder!")
 
     # Check if the backup has already been parsed...
-    backup = parse_backup(opts.path)
+    backup = ParsedBackup.from_path(opts.path)
 
     # Otherwise, proceed with extracting the files...
     backup.pretty_print_information()
 
     # Print a message if the found backup is not a version that has been tested against
     if not opts.override and backup.status['Version'] != '3.3':
-        print("Warning! This tool has only been tested with v3.3 of the iOS backup format. It may not function properly!")
+        print(f"Warning! This tool has only been tested with v3.3 of the iOS backup format. It may not function properly with version v{backup.status['Version']}!")
         print("Pass '--override' or '-o' to override this safety mechanism.")
         sys.exit(-1)
 
