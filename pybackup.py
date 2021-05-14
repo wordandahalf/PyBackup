@@ -1,10 +1,9 @@
 import argparse
-from enum import Enum, unique
 import json
 from json.decoder import JSONDecodeError
 from types import FunctionType
 import os
-import pathlib
+from pathlib import Path
 import plistlib
 import pyprind
 import shutil
@@ -13,7 +12,7 @@ import sys
 from tabulate import tabulate
 
 class ParsedBackup():
-    path: str = ""
+    path: Path = None
     found_files: dict = {}
     files: sqlite3.Cursor = None
 
@@ -21,15 +20,15 @@ class ParsedBackup():
     manifest: dict = {}
     status: dict = {}
 
-    def __init__(self, path: str, found_files: dict):
+    def __init__(self, path: Path, found_files: dict):
         self.path = path
         self.found_files = found_files
 
-        self.info = self.__parse_plist__(os.path.join(path, 'Info.plist'))
-        self.manifest = self.__parse_plist__(os.path.join(path, 'Manifest.plist'))
-        self.status = self.__parse_plist__(os.path.join(path, 'Status.plist'))
+        self.info = self.__parse_plist__(path / 'Info.plist')
+        self.manifest = self.__parse_plist__(path / 'Manifest.plist')
+        self.status = self.__parse_plist__(path / 'Status.plist')
 
-        con = sqlite3.connect(os.path.join(path, 'Manifest.db'))
+        con = sqlite3.connect(path / 'Manifest.db')
         self.files = con.cursor()
 
     def pretty_print_information(self):
@@ -44,16 +43,17 @@ class ParsedBackup():
         ))
 
     @staticmethod
-    def from_path(backup_path: str):
-        json_file = os.path.join(backup_path, 'pybackup.json')
+    def from_path(backup_path: Path):
+        json_file = backup_path / 'pybackup.json'
         json_data = {}
 
-        if not os.path.isfile(json_file):
-            files = list(pathlib.Path(backup_path).rglob('*'))
+        if not json_file.is_file():
+            print("Parsing backup...")
+            files = list(backup_path.rglob('*'))
             file_count = len(files)
 
             bar = pyprind.ProgBar(file_count)
-            for file in list(pathlib.Path(backup_path).rglob('*')):
+            for file in files:
                 if not file.is_dir():
                     json_data[file.name] = { 'path': os.path.relpath(file, backup_path) }
                 bar.update()
@@ -73,10 +73,10 @@ class ParsedBackup():
         return ParsedBackup(backup_path, json_data)
 
     @staticmethod
-    def __parse_plist__(path: str) -> dict:
+    def __parse_plist__(path: Path) -> dict:
         data = {}
 
-        with open(path, 'rb') as plist:
+        with Path.open(path, 'rb') as plist:
             data = plistlib.load(plist)
             plist.close()
 
@@ -91,11 +91,11 @@ class Extractors():
     def list() -> list[str]:
         return Extractors.__mapping.keys()
 
-    def __extract_all__(backup: ParsedBackup, destination: str):
+    def __extract_all__(backup: ParsedBackup, destination: Path):
         backup.files.execute("SELECT * FROM Files;")
         Extractors.__copy_files__(backup, backup.files.fetchall(), destination)
 
-    def __extract_camera_roll__(backup: ParsedBackup, destination: str):
+    def __extract_camera_roll__(backup: ParsedBackup, destination: Path):
         # Photos have a few different possible extensions, though with one commonality:
         # they are stored in Media/DCIM/%APPLE/%.
 
@@ -105,7 +105,7 @@ class Extractors():
         Extractors.__copy_files__(backup, backup.files.fetchall(), destination)
 
     @staticmethod
-    def __copy_files__(backup: ParsedBackup, files: list, destination: str):
+    def __copy_files__(backup: ParsedBackup, files: list, destination: Path):
         bar = pyprind.ProgBar(len(files))
         for file in files:
             fileID = file[0]
@@ -114,10 +114,10 @@ class Extractors():
                 print(f"File {fileID} exists in Manifest.db, but not in pybackup.json!")
                 continue
 
-            absoluteSource = os.path.join(backup.path, backup.found_files[fileID]['path'])
+            absoluteSource = backup.path / backup.found_files[fileID]['path']
 
             relativeDestination = file[2].replace('/', os.path.sep)
-            absoluteDestination = os.path.join(destination, relativeDestination)
+            absoluteDestination : Path = destination / relativeDestination
 
             os.makedirs(os.path.dirname(absoluteDestination), exist_ok=True)
             shutil.copy(absoluteSource, absoluteDestination)
@@ -144,7 +144,7 @@ def main(args: list[str]):
         raise ValueError(f"The provided path '{opts.path}' does not exist or is not a folder!")
 
     # Check if the backup has already been parsed...
-    backup = ParsedBackup.from_path(opts.path)
+    backup = ParsedBackup.from_path(Path(opts.path))
 
     # Otherwise, proceed with extracting the files...
     backup.pretty_print_information()
@@ -157,7 +157,7 @@ def main(args: list[str]):
 
     if getattr(opts, 'extract_type') is not None:
         try:
-            Extractors.from_name(opts.extract_type)(backup, opts.destination)
+            Extractors.from_name(opts.extract_type)(backup, Path(opts.destination))
         except KeyError:
             print(f"'{opts.extract_type}' is not a valid extraction type!")
 
