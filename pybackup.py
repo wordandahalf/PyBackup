@@ -1,6 +1,7 @@
 import argparse
 from enum import Enum, unique
 import json
+from json.decoder import JSONDecodeError
 from types import FunctionType
 import os
 import pathlib
@@ -58,11 +59,15 @@ class ParsedBackup():
                 bar.update()
 
             with open(json_file, 'w') as file:
-                file.write(json.dumps(files))
+                file.write(json.dumps(json_data))
                 file.close()
         else:
             with open(json_file, 'r') as file:
-                json_data = json.load(file)
+                try:
+                    json_data = json.load(file)
+                except JSONDecodeError:
+                    print(f"There was an error decoding the JSON file at {json_file}. Please delete it and re-parse the backup.")
+
                 file.close()
 
         return ParsedBackup(backup_path, json_data)
@@ -89,13 +94,11 @@ class Extractors():
     def list() -> list[str]:
         return Extractors.__mapping.keys()
 
-    @staticmethod
     def __extract_all__(backup: ParsedBackup, destination: str):
         # Execute every extractor except the first one (which should always be this)
-        for extractor in Extractors.__mapping.values()[1:]:
+        for extractor in list(Extractors.__mapping.values())[1:]:
             extractor(backup, destination)
 
-    @staticmethod
     def __extract_camera_roll__(backup: ParsedBackup, destination: str):
         # Photos have a few different possible extensions, though with one commonality:
         # they are stored in Media/DCIM/%APPLE/%.
