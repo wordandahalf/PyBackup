@@ -9,6 +9,7 @@ import pyprind
 import shutil
 import sqlite3
 import sys
+from tabulate import tabulate
 
 class ParsedBackup():
     path: str = ""
@@ -29,6 +30,17 @@ class ParsedBackup():
 
         con = sqlite3.connect(os.path.join(path, 'Manifest.db'))
         self.files = con.cursor()
+
+    def pretty_print_information(self):
+        print(tabulate(
+            [
+                ["Device Name: " + self.info['Device Name'], "Device Type: " + self.info['Product Type']],
+                ["Software Version: " + self.info['Product Version'], "Serial Number: " + self.info['Serial Number']],
+                ["Backup Version: " + self.status['Version'], "Backup Date: " + self.status['Date'].strftime("%A, %d %b %Y %I:%M:%S UTC")],
+                [f"Type: {'Full' if self.status['IsFullBackup'] else 'Not full'}", "Status: " + self.status['BackupState']],
+                ["Encrypted: " + str(self.manifest['IsEncrypted']), ""],
+            ]
+        ))
 
     @staticmethod
     def __parse_plist__(path: str) -> dict:
@@ -128,7 +140,7 @@ def main(args: list[str]):
     backup = parse_backup(opts.path)
 
     # Otherwise, proceed with extracting the files...
-    print(f"Found backup (v{backup.status['Version']}) from '{backup.info['Device Name']}' (#{backup.info['Serial Number']}, {backup.info['Product Type']}) with iOS {backup.info['Product Version']}!")
+    backup.pretty_print_information()
 
     # Print a message if the found backup is not a version that has been tested against
     if not opts.override and backup.status['Version'] != '3.3':
