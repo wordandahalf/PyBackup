@@ -3,7 +3,7 @@ A Python script for extracting data from iOS backups
 
 ## Installation
 1. Install Python. I used v3.9.5.
-2. Go through the imports and ensure `plistlib`, `pyprind`, and `tabulate` are installed.
+2. Ensure `plistlib`, `pyprind`, and `tabulate` are installed.
 
 ## Use
 1. Create a backup of an iOS device
