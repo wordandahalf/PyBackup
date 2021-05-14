@@ -71,7 +71,7 @@ class ParsedBackup():
                 file.close()
 
         return ParsedBackup(backup_path, json_data)
-        
+
     @staticmethod
     def __parse_plist__(path: str) -> dict:
         data = {}
@@ -85,19 +85,15 @@ class ParsedBackup():
 class Extractors():
     @staticmethod
     def from_name(name: str) -> FunctionType:
-        try:
-            return Extractors.__mapping[name]
-        except KeyError:
-            return None
+        return Extractors.__mapping[name]
 
     @staticmethod
     def list() -> list[str]:
         return Extractors.__mapping.keys()
 
     def __extract_all__(backup: ParsedBackup, destination: str):
-        # Execute every extractor except the first one (which should always be this)
-        for extractor in list(Extractors.__mapping.values())[1:]:
-            extractor(backup, destination)
+        backup.files.execute("SELECT * FROM Files;")
+        Extractors.__copy_files__(backup, backup.files.fetchall(), destination)
 
     def __extract_camera_roll__(backup: ParsedBackup, destination: str):
         # Photos have a few different possible extensions, though with one commonality:
@@ -106,11 +102,18 @@ class Extractors():
         print("Extracting Camera Roll...")
 
         backup.files.execute("SELECT * FROM Files WHERE relativePath like 'Media/DCIM/%APPLE/%';")
-        files = backup.files.fetchall()
+        Extractors.__copy_files__(backup, backup.files.fetchall(), destination)
 
+    @staticmethod
+    def __copy_files__(backup: ParsedBackup, files: list, destination: str):
         bar = pyprind.ProgBar(len(files))
         for file in files:
             fileID = file[0]
+
+            if not fileID in backup.found_files:
+                print(f"File {fileID} exists in Manifest.db, but not in pybackup.json!")
+                continue
+
             absoluteSource = os.path.join(backup.path, backup.found_files[fileID]['path'])
 
             relativeDestination = file[2].replace('/', os.path.sep)
@@ -156,7 +159,7 @@ def main(args: list[str]):
         try:
             Extractors.from_name(opts.extract_type)(backup, opts.destination)
         except KeyError:
-            print(f"{opts.extract_type} is not a valid ")
+            print(f"'{opts.extract_type}' is not a valid extraction type!")
 
 if __name__ == '__main__':
     main(sys.argv)
